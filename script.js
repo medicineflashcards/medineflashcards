@@ -8,6 +8,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const themeBlackBtn = document.getElementById('theme-black-btn');
     const deckList = document.getElementById('deck-list');
     const addDeckBtn = document.getElementById('add-deck-btn');
+    const addFlashcardGlobalBtn = document.getElementById('add-flashcard-global-btn');
     const importDeckBtn = document.getElementById('import-deck-btn');
     const deckFileInput = document.getElementById('deck-file-input');
     const flashcardArea = document.getElementById('flashcard-area');
@@ -58,6 +59,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const docReaderModal = document.getElementById('doc-reader-modal');
     const docReaderTitle = document.getElementById('doc-reader-title');
     const docReaderContent = document.getElementById('doc-reader-content');
+    const createFlashcardFromNoteBtn = document.getElementById('create-flashcard-from-note-btn');
+    const deckSelectorModal = document.getElementById('deck-selector-modal');
+    const deckSelectorList = document.getElementById('deck-selector-list');
 
     // --- Estado de la Aplicación ---
     let decks = JSON.parse(localStorage.getItem('flashcardDecks')) || [];
@@ -65,7 +69,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let tasks = JSON.parse(localStorage.getItem('studyTasks')) || [];
     let calendarEvents = JSON.parse(localStorage.getItem('calendarEvents')) || {};
     let eventTypes = JSON.parse(localStorage.getItem('calendarEventTypes')) || [{id: 'default', name: 'Estudio', color: '#2ecc71'}];
-    let currentDeckIndex = -1, currentCardIndex = 0, editingDocId = null;
+    let currentDeckIndex = -1, currentCardIndex = 0, editingDocId = null, onDeckSelectedCallback = null;
     let currentDate = new Date();
     
     const quillToolbarOptions = [[{ 'font': [] }],['bold', 'italic', 'underline'],[{ 'list': 'ordered'}, { 'list': 'bullet' }],[{ 'background': [] }],['image']];
@@ -174,6 +178,23 @@ document.addEventListener('DOMContentLoaded', () => {
         };
         reader.readAsText(file);
     }
+     function showDeckSelector(callback) {
+        onDeckSelectedCallback = callback;
+        deckSelectorList.innerHTML = '';
+        if (decks.length === 0) {
+            showNotification('Primero debes crear un mazo.', 'error');
+            return;
+        }
+        decks.forEach((deck, index) => {
+            const deckItem = document.createElement('div');
+            deckItem.className = 'deck-selector-item';
+            deckItem.textContent = deck.name;
+            deckItem.dataset.index = index;
+            deckSelectorList.appendChild(deckItem);
+        });
+        deckSelectorModal.style.display = 'block';
+    }
+
 
     // --- LÓGICA DE NOTAS ---
     function saveDocs() { localStorage.setItem('studyDocs', JSON.stringify(docs)); }
@@ -262,38 +283,95 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // --- LÓGICA DE POMODORO ---
-    let pomodoroInterval, pomodoroTimeLeft = (localStorage.getItem('pomodoroStudyTime') || 25) * 60, pomodoroIsPaused = true, pomodoroIsStudySession = true;
-    function updatePomodoroDisplay() {
-        const minutes = Math.floor(pomodoroTimeLeft / 60); const seconds = pomodoroTimeLeft % 60;
-        pomodoroTimerDisplay.textContent = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
-    }
-    function startPomodoro() {
-        if (pomodoroIsPaused) {
-            pomodoroIsPaused = false;
-            pomodoroInterval = setInterval(() => {
-                pomodoroTimeLeft--; updatePomodoroDisplay();
-                if (pomodoroTimeLeft < 0) {
-                    pomodoroIsStudySession = !pomodoroIsStudySession; resetPomodoroTimer(false); startPomodoro();
-                }
-            }, 1000);
+    // --- LÓGICA DE POMODORO (ROBUSTA) ---
+    let pomodoroInterval;
+
+    function pomodoroTick() {
+        const state = JSON.parse(localStorage.getItem('pomodoroState'));
+        if (!state || state.status !== 'running') {
+            clearInterval(pomodoroInterval);
+            return;
         }
+
+        const timeLeft = Math.round((state.endTime - Date.now()) / 1000);
+
+        if (timeLeft < 0) {
+            clearInterval(pomodoroInterval);
+            const nextIsStudy = state.sessionType !== 'study';
+            const nextDuration = nextIsStudy ? (pomodoroStudyTimeInput.value || 25) : (pomodoroBreakTimeInput.value || 5);
+            
+            startPomodoroTimer(nextIsStudy, nextDuration * 60);
+            return;
+        }
+        updatePomodoroDisplay(timeLeft, state.sessionType);
     }
-    function pausePomodoro() { clearInterval(pomodoroInterval); pomodoroIsPaused = true; }
-    function resetPomodoroTimer(manual = true) {
-        pausePomodoro();
-        if(manual) pomodoroIsStudySession = true;
-        const studyTime = pomodoroStudyTimeInput.value || 25; const breakTime = pomodoroBreakTimeInput.value || 5;
-        pomodoroTimeLeft = (pomodoroIsStudySession ? studyTime : breakTime) * 60;
-        pomodoroTimerDisplay.className = pomodoroIsStudySession ? 'pomodoro-study' : 'pomodoro-break';
-        updatePomodoroDisplay();
-    }
-    function savePomodoroSettings() {
-        localStorage.setItem('pomodoroStudyTime', pomodoroStudyTimeInput.value);
-        localStorage.setItem('pomodoroBreakTime', pomodoroBreakTimeInput.value);
-        resetPomodoroTimer();
+
+    function updatePomodoroDisplay(seconds, sessionType) {
+        const minutes = Math.floor(seconds / 60);
+        const remainingSeconds = seconds % 60;
+        pomodoroTimerDisplay.textContent = `${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
+        pomodoroTimerDisplay.className = sessionType === 'study' ? 'pomodoro-study' : 'pomodoro-break';
     }
     
+    function startPomodoroTimer(isStudySession, durationSeconds) {
+        const now = Date.now();
+        const endTime = now + durationSeconds * 1000;
+        const state = {
+            status: 'running',
+            sessionType: isStudySession ? 'study' : 'break',
+            endTime: endTime,
+            timeLeftOnPause: null
+        };
+        localStorage.setItem('pomodoroState', JSON.stringify(state));
+        clearInterval(pomodoroInterval);
+        pomodoroInterval = setInterval(pomodoroTick, 1000);
+        pomodoroTick(); 
+    }
+
+    function handleStartClick() {
+        let state = JSON.parse(localStorage.getItem('pomodoroState'));
+        if (!state || state.status === 'stopped') {
+            startPomodoroTimer(true, (pomodoroStudyTimeInput.value || 25) * 60);
+        } else if (state.status === 'paused') {
+            const durationSeconds = state.timeLeftOnPause;
+            startPomodoroTimer(state.sessionType === 'study', durationSeconds);
+        }
+    }
+
+    function handlePauseClick() {
+        clearInterval(pomodoroInterval);
+        let state = JSON.parse(localStorage.getItem('pomodoroState'));
+        if (state && state.status === 'running') {
+            const timeLeftOnPause = Math.round((state.endTime - Date.now()) / 1000);
+            state.status = 'paused';
+            state.timeLeftOnPause = timeLeftOnPause > 0 ? timeLeftOnPause : 0;
+            localStorage.setItem('pomodoroState', JSON.stringify(state));
+        }
+    }
+
+    function handleResetClick() {
+        clearInterval(pomodoroInterval);
+        localStorage.removeItem('pomodoroState');
+        const studyTime = pomodoroStudyTimeInput.value || 25;
+        updatePomodoroDisplay(studyTime * 60, 'study');
+    }
+
+    function initializePomodoro() {
+        const state = JSON.parse(localStorage.getItem('pomodoroState'));
+        if (!state) {
+            handleResetClick();
+            return;
+        }
+        if (state.status === 'running') {
+            pomodoroInterval = setInterval(pomodoroTick, 1000);
+            pomodoroTick();
+        } else if (state.status === 'paused') {
+            updatePomodoroDisplay(state.timeLeftOnPause, state.sessionType);
+        } else {
+            handleResetClick();
+        }
+    }
+
     // --- LÓGICA DE CALENDARIO ---
     function saveCalendarEvents() { localStorage.setItem('calendarEvents', JSON.stringify(calendarEvents)); }
     function saveEventTypes() { localStorage.setItem('calendarEventTypes', JSON.stringify(eventTypes)); }
@@ -394,6 +472,22 @@ document.addEventListener('DOMContentLoaded', () => {
         if (importedCount > 0) { saveDecks(); bulkImportForm.reset(); showNotification(`${importedCount} flashcards importadas.`); showSection('flashcard-view-container'); showNextCard(); } 
         else { showNotification("No se encontraron flashcards válidas. Revisa el formato.", 'error'); }
     });
+    addFlashcardGlobalBtn.addEventListener('click', () => {
+        showDeckSelector((deckIndex) => {
+            currentDeckIndex = deckIndex;
+            document.getElementById('add-card-title').textContent = `Añadir a "${decks[deckIndex].name}"`;
+            deckSelectorModal.style.display = 'none';
+            showSection('add-card-container');
+        });
+    });
+    deckSelectorList.addEventListener('click', e => {
+        const target = e.target.closest('.deck-selector-item');
+        if (target && onDeckSelectedCallback) {
+            const deckIndex = parseInt(target.dataset.index, 10);
+            onDeckSelectedCallback(deckIndex);
+            onDeckSelectedCallback = null; 
+        }
+    });
 
     // NOTAS
     addDocBtn.addEventListener('click', () => showNoteEditor());
@@ -405,9 +499,14 @@ document.addEventListener('DOMContentLoaded', () => {
     docsList.addEventListener('click', e => {
         const readBtn = e.target.closest('.read-doc-btn'); const editBtn = e.target.closest('.edit-doc-btn'); const deleteBtn = e.target.closest('.delete-doc-btn');
         if (readBtn) {
-            const docId = readBtn.dataset.id; let docToRead;
-            for (const subject in docs) { docToRead = docs[subject].find(d => d.id === docId); if (docToRead) break; }
-            if (docToRead) { docReaderTitle.textContent = docToRead.title; docReaderContent.innerHTML = docToRead.content; docReaderModal.style.display = 'block'; }
+            const docId = readBtn.dataset.id;
+            const allDocs = Object.values(docs).flat();
+            const docToRead = allDocs.find(d => d.id === docId);
+            if (docToRead) { 
+                docReaderTitle.textContent = docToRead.title; 
+                docReaderContent.innerHTML = docToRead.content; 
+                docReaderModal.style.display = 'block'; 
+            }
         }
         if (editBtn) { showNoteEditor(editBtn.dataset.id); }
         if (deleteBtn) {
@@ -424,6 +523,26 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
     });
+    createFlashcardFromNoteBtn.addEventListener('click', () => {
+        const selection = window.getSelection();
+        const frontText = selection.toString().trim();
+        if (!frontText) {
+            return showNotification('Por favor, selecciona el texto para el frente de la tarjeta.', 'error');
+        }
+        const backText = prompt('Introduce el reverso para esta flashcard:', '');
+        if (backText === null || backText.trim() === '') {
+            return showNotification('Creación de flashcard cancelada.', 'error');
+        }
+        const newCard = { front: frontText, back: backText.trim(), masteryLevel: 1 };
+        showDeckSelector((deckIndex) => {
+            decks[deckIndex].cards.push(newCard);
+            saveDecks();
+            showNotification(`Flashcard guardada en "${decks[deckIndex].name}".`);
+            deckSelectorModal.style.display = 'none';
+            docReaderModal.style.display = 'none';
+            renderDecks();
+        });
+    });
 
     // TAREAS
     addTaskForm.addEventListener('submit', e => { e.preventDefault(); const text = taskInput.value.trim(); if (text) { tasks.push({ text: text, completed: false }); saveTasks(); renderTasks(); taskInput.value = ''; } });
@@ -433,12 +552,12 @@ document.addEventListener('DOMContentLoaded', () => {
         if (e.target.closest('.delete-task-btn')) { tasks.splice(index, 1); saveTasks(); renderTasks(); }
     });
     
-    // POMODORO Y CALENDARIO
-    pomodoroStartBtn.addEventListener('click', startPomodoro);
-    pomodoroPauseBtn.addEventListener('click', pausePomodoro);
-    pomodoroResetBtn.addEventListener('click', () => resetPomodoroTimer(true));
-    pomodoroStudyTimeInput.addEventListener('change', savePomodoroSettings);
-    pomodoroBreakTimeInput.addEventListener('change', savePomodoroSettings);
+    // POMODORO Y CALENDARIO (LISTENERS)
+    pomodoroStartBtn.addEventListener('click', handleStartClick);
+    pomodoroPauseBtn.addEventListener('click', handlePauseClick);
+    pomodoroResetBtn.addEventListener('click', handleResetClick);
+    pomodoroStudyTimeInput.addEventListener('change', handleResetClick);
+    pomodoroBreakTimeInput.addEventListener('change', handleResetClick);
     prevMonthBtn.addEventListener('click', () => { currentDate.setMonth(currentDate.getMonth() - 1); renderCalendar(); });
     nextMonthBtn.addEventListener('click', () => { currentDate.setMonth(currentDate.getMonth() + 1); renderCalendar(); });
     addEventTypeForm.addEventListener('submit', e => { e.preventDefault(); const name = eventTypeNameInput.value.trim(); if (name) { eventTypes.push({ id: Date.now().toString(), name, color: eventTypeColorInput.value }); saveEventTypes(); renderEventTypes(); addEventTypeForm.reset(); } });
@@ -454,5 +573,7 @@ document.addEventListener('DOMContentLoaded', () => {
     renderDecks();
     pomodoroStudyTimeInput.value = localStorage.getItem('pomodoroStudyTime') || 25;
     pomodoroBreakTimeInput.value = localStorage.getItem('pomodoroBreakTime') || 5;
-    resetPomodoroTimer();
+    initializePomodoro();
 });
+
+

@@ -39,6 +39,7 @@
             <div id="deck-list"></div>
             <div class="deck-actions">
                 <button id="add-deck-btn">Crear Nuevo Mazo</button>
+                <button id="add-flashcard-global-btn">Añadir Flashcard</button>
                 <button id="import-deck-btn">Importar Mazo</button>
             </div>
             <input type="file" id="deck-file-input" accept=".json" style="display: none;">
@@ -46,15 +47,16 @@
 
         <section id="flashcard-view-container" style="display: none;">
             <h2 id="current-deck-title"></h2>
-            <div id="flashcard-area"></div>
-            <div id="controls">
-                <button id="next-btn">Siguiente</button>
+            <div id="deck-progress-container">
+                <span>Dominio:</span>
+                <div id="deck-progress-bar"><div id="deck-progress-fill"></div></div>
+                <span id="deck-progress-text">0%</span>
             </div>
+            <div id="flashcard-area"></div>
+            <div id="controls"><button id="next-btn">Siguiente</button></div>
             <div id="rating-controls" style="display: none;">
                 <h4>¿Qué tan bien te sabías esta?</h4>
-                <div id="rating-buttons">
-                    <button data-rating="1" class="rating-btn">1 (Nada)</button><button data-rating="2" class="rating-btn">2 (Difícil)</button><button data-rating="3" class="rating-btn">3 (Más o menos)</button><button data-rating="4" class="rating-btn">4 (Bien)</button><button data-rating="5" class="rating-btn">5 (Perfecto)</button>
-                </div>
+                <div id="rating-buttons"><button data-rating="1" class="rating-btn">1</button><button data-rating="2" class="rating-btn">2</button><button data-rating="3" class="rating-btn">3</button><button data-rating="4" class="rating-btn">4</button><button data-rating="5" class="rating-btn">5</button></div>
             </div>
             <button id="add-card-btn">Añadir Flashcard</button>
             <button id="download-deck-btn">Descargar Mazo</button>
@@ -68,7 +70,7 @@
                 <button id="bulk-import-mode-btn">Importar texto</button>
             </div>
             <form id="add-card-form" class="mode-content"><label for="front">Frente:</label><textarea id="front" required></textarea><label for="back">Reverso:</label><textarea id="back" required></textarea><button type="submit">Guardar</button></form>
-            <form id="bulk-import-form" class="mode-content" style="display: none;"><p>Pega tu lista de tarjetas. Formato: <code>Frente,Reverso</code></p><label for="bulk-text">Texto a importar:</label><textarea id="bulk-text" rows="10" required></textarea><button type="submit">Importar</button></form>
+            <form id="bulk-import-form" class="mode-content" style="display: none;"><p>Pega tu lista. Formato: <code>Frente,Reverso</code> (o con tabulador).</p><label for="bulk-text">Texto a importar:</label><textarea id="bulk-text" rows="10" required></textarea><button type="submit">Importar</button></form>
             <button id="cancel-add-btn">Cancelar</button>
         </section>
 
@@ -111,14 +113,8 @@
             </div>
             <div id="pomodoro-settings">
                 <h3>Configuración</h3>
-                <div>
-                    <label for="pomodoro-study-time">Tiempo de Estudio (min):</label>
-                    <input type="number" id="pomodoro-study-time" value="25" min="1">
-                </div>
-                <div>
-                    <label for="pomodoro-break-time">Tiempo de Descanso (min):</label>
-                    <input type="number" id="pomodoro-break-time" value="5" min="1">
-                </div>
+                <div><label for="pomodoro-study-time">Tiempo de Estudio (min):</label><input type="number" id="pomodoro-study-time" value="25" min="1"></div>
+                <div><label for="pomodoro-break-time">Tiempo de Descanso (min):</label><input type="number" id="pomodoro-break-time" value="5" min="1"></div>
             </div>
         </section>
 
@@ -129,13 +125,11 @@
             <div id="calendar-legend">
                 <h3>Tipos de Evento</h3>
                 <div id="event-types-list"></div>
-                <form id="add-event-type-form">
-                    <input type="text" id="event-type-name" placeholder="Nombre del evento" required>
-                    <input type="color" id="event-type-color" value="#3498db">
-                    <button type="submit">Añadir Evento</button>
-                </form>
+                <form id="add-event-type-form"><input type="text" id="event-type-name" placeholder="Nombre del evento" required><input type="color" id="event-type-color" value="#3498db"><button type="submit">Añadir Evento</button></form>
             </div>
         </section>
+
+        <div id="notification-toast"></div>
     </main>
 
     <div id="ad-container">
@@ -144,8 +138,37 @@
     </div>
     
     <button id="help-btn">?</button>
+    
+    <div id="doc-reader-modal" class="modal">
+        <div class="modal-content">
+            <span class="close-btn">&times;</span>
+            <h2 id="doc-reader-title"></h2>
+            <div id="doc-reader-content"></div>
+            <div class="modal-footer">
+                <button id="create-flashcard-from-note-btn">Crear Flashcard con Texto Seleccionado</button>
+            </div>
+        </div>
+    </div>
 
-    <div id="help-modal" class="modal"><div class="modal-content"><span class="close-btn">&times;</span><h2>Guía Rápida</h2><div class="modal-section"><h3>Exportar Mazo</h3><ol><li>Haz clic sobre el mazo que quieres guardar.</li><li>Presiona <strong>"Descargar Mazo"</strong>.</li><li>Se guardará un archivo <code>.json</code> en tu computadora.</li></ol></div><div class="modal-section"><h3>Importar Mazo</h3><ol><li>En la pantalla de Flashcards, haz clic en <strong>"Importar Mazo"</strong>.</li><li>Selecciona el archivo <code>.json</code> que habías guardado.</li><li>El mazo aparecerá en tu lista.</li></ol></div><div class="modal-section"><h3>Crear Flashcards con IA</h3><ol><li>Pídele a una IA: <code>Genera 10 flashcards sobre suturas. Formato: Nombre,Descripción.</code></li><li>Copia la lista.</li><li>Entra a un mazo, ve a <strong>"Añadir Flashcard"</strong> -> <strong>"Importar texto"</strong>.</li><li>Pega la lista y haz clic en importar.</li></ol></div><div class="modal-section"><h3>Ejemplo Visual</h3><p>Al estudiar, haz clic en la tarjeta para voltearla.</p><div class="flashcard-container-example"><div class="flashcard-face-example front">Fémur</div><div class="flashcard-face-example back">Hueso del muslo, el más largo del cuerpo.</div></div></div></div></div>
+    <div id="deck-selector-modal" class="modal">
+        <div class="modal-content">
+            <span class="close-btn">&times;</span>
+            <h2>Seleccionar Mazo</h2>
+            <p>¿En qué mazo quieres guardar esta flashcard?</p>
+            <div id="deck-selector-list"></div>
+        </div>
+    </div>
+
+    <div id="help-modal" class="modal">
+        <div class="modal-content">
+            <span class="close-btn">&times;</span>
+            <h2>Guía Rápida</h2>
+            <div class="modal-section"><h3>Exportar Mazo</h3><ol><li>Haz clic sobre el mazo que quieres guardar.</li><li>Presiona <strong>"Descargar Mazo"</strong>.</li><li>Se guardará un archivo <code>.json</code> en tu computadora.</li></ol></div>
+            <div class="modal-section"><h3>Importar Mazo</h3><ol><li>En la pantalla de Flashcards, haz clic en <strong>"Importar Mazo"</strong>.</li><li>Selecciona el archivo <code>.json</code> que habías guardado.</li><li>El mazo aparecerá en tu lista.</li></ol></div>
+            <div class="modal-section"><h3>Crear Flashcards con IA</h3><ol><li>Pídele a una IA: <code>Genera 10 flashcards sobre suturas. Formato: Nombre,Descripción.</code></li><li>Copia la lista.</li><li>Entra a un mazo, ve a <strong>"Añadir Flashcard"</strong> -> <strong>"Importar texto"</strong>.</li><li>Pega la lista y haz clic en importar.</li></ol></div>
+            <div class="modal-section"><h3>Ejemplo Visual</h3><p>Al estudiar, haz clic en la tarjeta para voltearla.</p><div class="flashcard-container-example"><div class="flashcard-face-example front">Fémur</div><div class="flashcard-face-example back">Hueso del muslo, el más largo del cuerpo.</div></div></div>
+        </div>
+    </div>
     
     <script src="https://cdn.quilljs.com/1.3.6/quill.js"></script>
     <script src="script.js"></script>
